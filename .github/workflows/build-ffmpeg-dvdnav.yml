@@ -1,61 +1,55 @@
-name: Build FFmpeg (Windows with libdvdnav)
+name: Build FFmpeg Windows (with libdvdnav)
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
-  build:
+  build-ffmpeg:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git make automake autoconf libtool \
-            pkg-config yasm nasm texinfo wget \
-            curl cmake ninja-build meson \
-            libssl-dev
+            git build-essential pkg-config autoconf automake \
+            libtool wget curl bison flex yasm nasm meson cmake
 
-      - name: Clone build helpers
+      - name: Clone ffmpeg-windows-build-helpers
         run: |
           git clone https://github.com/rdp/ffmpeg-windows-build-helpers.git
+          ls -R ffmpeg-windows-build-helpers
 
-      - name: Build FFmpeg with libdvdnav
+      - name: Build FFmpeg including libdvdnav
+        env:
+          # Add custom configure flags here:
+          EXTRA_CONFIG_FLAGS: "--enable-libdvdnav --enable-libdvdread --enable-libdvdcss"
         run: |
           cd ffmpeg-windows-build-helpers
 
-          # Enable non-free + GPL + shared/static as needed
-          export EXTRA_FFMPEG_CONF_FLAGS="\
-            --enable-gpl \
-            --enable-version3 \
-            --enable-libdvdnav \
-            --enable-libdvdread \
-            --enable-libdvdcss \
-          "
+          # Run script non‑interactively, injecting extra configure options
+          chmod +x cross_compile_ffmpeg.sh
 
-          # Build (64-bit Windows)
+          # The script will detect missing dependencies and build the cross‑toolchain
+          # The env variable above is used in this workflow code to pass extra flags
           ./cross_compile_ffmpeg.sh \
-            --arch=x86_64 \
-            --target-os=mingw32 \
-            --enable-gpl \
-            --enable-nonfree \
-            --extra-ffmpeg-conf-flags="$EXTRA_FFMPEG_CONF_FLAGS"
+            --build-ffmpeg-shared=y \
+            --disable-nonfree=n \
+            --extra-ffmpeg-config="$EXTRA_CONFIG_FLAGS"
 
-      - name: Package artifacts
+      - name: Collect output
         run: |
-          mkdir -p output
-          cp -r ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git_with_fdk_aac/* output/
+          mkdir -p artifacts
+          cp -r ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git* artifacts/ || true
+          # compress the whole folder if needed
+          tar -czvf ffmpeg-win64-dvdnav.tar.gz -C artifacts .
 
-          # Optional: shrink size
-          tar -czvf ffmpeg-win64-dvdnav.tar.gz -C output .
-
-      - name: Upload artifact
+      - name: Upload compile artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-win64-dvdnav
